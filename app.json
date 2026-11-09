@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ASTOFFLINE",
+    "name": "OFFLINE BILLING",
     "slug": "ASTOFFLINE",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,9 +8,14 @@
     "scheme": "astoffline",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow ASTOFFLINE to access the camera for barcode scanning."
+      }
     },
+
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -19,14 +24,21 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.keerthi2693.ASTOFFLINE",
+      "permissions": [
+        "CAMERA"
+      ]
     },
+
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
+
       [
         "expo-splash-screen",
         {
@@ -38,11 +50,30 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow ASTOFFLINE to access the camera for barcode scanning."
+        }
+      ],
+
+      "expo-sqlite",
+      "@react-native-community/datetimepicker",
+      "expo-mail-composer"
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b9614481-fee9-4df3-9d62-3d9f3aefe9b4"
+      }
     }
   }
 }
