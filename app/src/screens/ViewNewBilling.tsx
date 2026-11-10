@@ -85,6 +85,8 @@ type Invoice = {
 
   invoiceNo?: string;
 
+  serialNo?: number;
+
   invoiceDate?: string;
 
 
@@ -170,6 +172,8 @@ type InvoiceItem = {
   productName?: string;
 
 
+
+  productTamilName?: string;
 
   productimage?: string;
 
@@ -437,6 +441,8 @@ console.log(
 
         SELECT
 
+          rowid AS serialNo,
+
           id,
 
           invoiceNo,
@@ -577,51 +583,57 @@ console.log(
 
         SELECT
 
-          id,
+          ni.id,
 
-          invoiceId,
+          ni.invoiceId,
 
-          productId,
+          ni.productId,
 
-          productcode,
+          ni.productcode,
 
-          productName,
+          ni.productName,
 
-          productimage,
+          COALESCE(NULLIF(TRIM(p.producttamilName), ''), ni.productName) AS productTamilName,
 
-          category,
+          ni.productimage,
 
-          subcategory,
+          ni.category,
 
-          quantity,
+          ni.subcategory,
 
-          rate,
+          ni.quantity,
 
-          amount,
+          ni.rate,
 
-          unit,
+          ni.amount,
 
-          uom,
+          ni.unit,
 
-          discount,
+          ni.uom,
 
-          taxableAmount,
+          ni.discount,
 
-          sgst,
+          ni.taxableAmount,
 
-          cgst,
+          ni.sgst,
 
-          igst,
+          ni.cgst,
 
-          taxAmount,
+          ni.igst,
 
-          totalAmount
+          ni.taxAmount,
 
-        FROM newinvoice_items
+          ni.totalAmount
 
-        WHERE invoiceId = ?
+        FROM newinvoice_items ni
 
-        ORDER BY rowid ASC
+        LEFT JOIN products p
+
+          ON CAST(p.id AS TEXT) = CAST(ni.productId AS TEXT)
+
+        WHERE ni.invoiceId = ?
+
+        ORDER BY ni.rowid ASC
 
         `,
 
@@ -772,528 +784,381 @@ console.log(
 
 
   const printBill = async () => {
-
-
-
     if (!invoice) {
-
+      Alert.alert("Print Error", "Invoice details are not available.");
       return;
-
     }
 
-
-
-
-
-    const productRows =
-
-      items.map(
-
-        item => `
-
-          <tr>
-
-            <td>${item.productName || "-"}</td>
-
-            <td>${item.quantity || 0}</td>
-
-            <td>${item.uom || item.unit || "-"}</td>
-
-            <td>₹${Number(
-
-              item.rate || 0
-
-            ).toFixed(2)}</td>
-
-            <td>₹${Number(
-
-              item.discount || 0
-
-            ).toFixed(2)}</td>
-
-            <td>₹${Number(
-
-              item.totalAmount || 0
-
-            ).toFixed(2)}</td>
-
-          </tr>
-
-        `
-
-      ).join("");
-
-
-
-
-
-    const html = `
-
-      <!DOCTYPE html>
-
-
-
-      <html>
-
-
-
-      <head>
-
-
-
-        <meta
-
-          name="viewport"
-
-          content="width=device-width"
-
-        />
-
-
-
-        <style>
-
-
-
-          body {
-
-            font-family: Arial;
-
-            padding: 20px;
-
-            color: #111827;
-
-          }
-
-
-
-          h1 {
-
-            text-align: center;
-
-            margin-bottom: 5px;
-
-          }
-
-
-
-          .center {
-
-            text-align: center;
-
-          }
-
-
-
-          .details {
-
-            margin-top: 20px;
-
-            margin-bottom: 20px;
-
-          }
-
-
-
-          table {
-
-            width: 100%;
-
-            border-collapse: collapse;
-
-          }
-
-
-
-          th,
-
-          td {
-
-            border-bottom: 1px solid #ddd;
-
-            padding: 8px;
-
-            text-align: left;
-
-            font-size: 12px;
-
-          }
-
-
-
-          th {
-
-            background: #f1f5f9;
-
-          }
-
-
-
-          .summary {
-
-            margin-top: 20px;
-
-            margin-left: auto;
-
-            width: 300px;
-
-          }
-
-
-
-          .summary-row {
-
-            display: flex;
-
-            justify-content: space-between;
-
-            padding: 5px 0;
-
-          }
-
-
-
-          .total {
-
-            border-top: 2px solid #111827;
-
-            margin-top: 8px;
-
-            padding-top: 10px;
-
-            font-size: 18px;
-
-            font-weight: bold;
-
-          }
-
-
-
-        </style>
-
-
-
-      </head>
-
-
-
-      <body>
-
-
-
-        <h1>INVOICE</h1>
-
-
-
-        <div class="center">
-
-          Invoice No:
-
-          ${invoice.invoiceNo || "-"}
-
-        </div>
-
-
-
-        <div class="center">
-
-          Date:
-
-          ${invoice.invoiceDate || "-"}
-
-        </div>
-
-
-
-        <div class="details">
-
-
-
-          <strong>Customer</strong>
-
-
-
-          <br />
-
-
-
-          ${invoice.customerName || "-"}
-
-
-
-          <br />
-
-
-
-          ${invoice.customerMobile || "-"}
-
-
-
-          ${
-
-            invoice.gstNo
-
-              ? `<br />GST No: ${invoice.gstNo}`
-
-              : ""
-
-          }
-
-
-
-        </div>
-
-
-
-
-
-        <table>
-
-
-
-          <thead>
-
-
-
-            <tr>
-
-              <th>Product</th>
-
-              <th>Qty</th>
-
-              <th>Unit</th>
-
-              <th>Rate</th>
-
-              <th>Discount</th>
-
-              <th>Total</th>
-
-            </tr>
-
-
-
-          </thead>
-
-
-
-          <tbody>
-
-
-
-            ${productRows}
-
-
-
-          </tbody>
-
-
-
-        </table>
-
-
-
-
-
-        <div class="summary">
-
-
-
-          <div class="summary-row">
-
-            <span>Subtotal</span>
-
-            <span>
-
-              ${money(invoice.subtotal)}
-
-            </span>
-
-          </div>
-
-
-
-          <div class="summary-row">
-
-            <span>Discount</span>
-
-            <span>
-
-              ${money(invoice.discount)}
-
-            </span>
-
-          </div>
-
-
-
-          <div class="summary-row">
-
-            <span>Taxable Amount</span>
-
-            <span>
-
-              ${money(invoice.taxableAmount)}
-
-            </span>
-
-          </div>
-
-
-
-          <div class="summary-row">
-
-            <span>CGST</span>
-
-            <span>
-
-              ${money(invoice.cgst)}
-
-            </span>
-
-          </div>
-
-
-
-          <div class="summary-row">
-
-            <span>SGST</span>
-
-            <span>
-
-              ${money(invoice.sgst)}
-
-            </span>
-
-          </div>
-
-
-
-          ${
-
-            Number(invoice.igst || 0) > 0
-
-              ? `
-
-                <div class="summary-row">
-
-                  <span>IGST</span>
-
-                  <span>
-
-                    ${money(invoice.igst)}
-
-                  </span>
-
-                </div>
-
-              `
-
-              : ""
-
-          }
-
-
-
-          <div class="summary-row total">
-
-            <span>Grand Total</span>
-
-            <span>
-
-              ${money(invoice.totalAmount)}
-
-            </span>
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-        <p class="center">
-
-          Payment:
-
-          ${invoice.paymentMode || "-"}
-
-        </p>
-
-
-
-
-
-        <p class="center">
-
-          Thank you for your business!
-
-        </p>
-
-
-
-      </body>
-
-
-
-      </html>
-
-    `;
-
-
-
-
+    if (!items.length) {
+      Alert.alert("Print Error", "No invoice items are available to print.");
+      return;
+    }
 
     try {
+      // Replace these two values with the actual shop details.
+      const SHOP_NAME = "YOUR SHOP NAME";
+      const SHOP_ADDRESS = "YOUR SHOP ADDRESS";
 
+      const escapeHtml = (value: unknown): string =>
+        String(value ?? "-")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
 
+      const formatAmount = (value: unknown): string =>
+        Number(value ?? 0).toFixed(2);
 
-      await Print.printAsync({
+      const formatQuantity = (value: unknown): string =>
+        Number(value ?? 0).toFixed(1);
 
-        html,
+      const createdAt = invoice.createdAt
+        ? new Date(invoice.createdAt)
+        : null;
 
-      });
+      const validCreatedAt =
+        createdAt && !Number.isNaN(createdAt.getTime())
+          ? createdAt
+          : null;
 
+      const receiptDate = validCreatedAt
+        ? validCreatedAt.toLocaleDateString("en-GB")
+        : invoice.invoiceDate || "-";
 
+      const receiptTime = validCreatedAt
+        ? validCreatedAt.toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          })
+        : "-";
 
-    } catch (error) {
-
-
-
-      console.log(
-
-        "❌ PRINT ERROR:",
-
-        error
-
+      const totalQuantity = items.reduce(
+        (sum, item) => sum + Number(item.quantity || 0),
+        0
       );
 
+      // Product name appears on its own line, matching the sample receipt.
+      const productRows = items
+        .map((item) => {
+          const productName =
+            item.productTamilName ||
+            item.productName ||
+            "-";
 
+          return `
+            <tr class="product-name-row">
+              <td colspan="4">${escapeHtml(productName)}</td>
+            </tr>
+            <tr class="product-value-row">
+              <td class="spacer"></td>
+              <td class="qty">${formatQuantity(item.quantity)}</td>
+              <td class="rate">${formatAmount(item.rate)}</td>
+              <td class="total">${formatAmount(item.totalAmount ?? item.amount)}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      const html = `
+        <!DOCTYPE html>
+        <html lang="ta">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            @page {
+              size: 58mm auto;
+              margin: 2mm;
+            }
+
+            * {
+              box-sizing: border-box;
+            }
+
+            html,
+            body {
+              width: 54mm;
+              margin: 0;
+              padding: 0;
+              color: #000;
+              background: #fff;
+              font-family: "Noto Sans Tamil", "Noto Sans", Arial, sans-serif;
+              font-size: 10px;
+              font-weight: 500;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .receipt {
+              width: 54mm;
+              padding: 0;
+            }
+
+            .shop-header {
+              text-align: center;
+              padding-bottom: 5px;
+            }
+
+            .shop-name {
+              font-size: 17px;
+              line-height: 1.25;
+              font-weight: 900;
+              text-transform: uppercase;
+            }
+
+            .shop-address {
+              margin-top: 2px;
+              font-size: 10px;
+              line-height: 1.3;
+              font-weight: 700;
+            }
+
+            .dashed {
+              border-top: 1px dashed #000;
+              height: 0;
+              margin: 5px 0;
+            }
+
+            .meta {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 10px;
+              font-weight: 700;
+            }
+
+            .meta td {
+              width: 50%;
+              padding: 1px 0;
+              vertical-align: top;
+            }
+
+            .meta .right {
+              text-align: right;
+              white-space: nowrap;
+            }
+
+            .column-head {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+              font-size: 10px;
+              font-weight: 900;
+            }
+
+            .column-head td {
+              padding: 5px 1px;
+              text-align: center;
+              white-space: nowrap;
+            }
+
+            .column-head .item-heading {
+              width: 48%;
+              text-align: left;
+            }
+
+            .column-head .qty-heading {
+              width: 14%;
+            }
+
+            .column-head .rate-heading {
+              width: 18%;
+            }
+
+            .column-head .total-heading {
+              width: 20%;
+              text-align: right;
+            }
+
+            .items {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+              font-size: 11px;
+            }
+
+            .product-name-row td {
+              padding: 5px 1px 0;
+              text-align: left;
+              font-size: 11px;
+              line-height: 1.4;
+              font-weight: 700;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            }
+
+            .product-value-row td {
+              padding: 1px 1px 5px;
+              font-size: 11px;
+              font-weight: 700;
+              white-space: nowrap;
+            }
+
+            .product-value-row .spacer {
+              width: 48%;
+            }
+
+            .product-value-row .qty {
+              width: 14%;
+              text-align: center;
+            }
+
+            .product-value-row .rate {
+              width: 18%;
+              text-align: right;
+            }
+
+            .product-value-row .total {
+              width: 20%;
+              text-align: right;
+            }
+
+            .totals {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 10px;
+              font-weight: 700;
+            }
+
+            .totals td {
+              padding: 5px 1px;
+              white-space: nowrap;
+            }
+
+            .totals .items-count {
+              text-align: left;
+              width: 23%;
+            }
+
+            .totals .qty-count {
+              text-align: center;
+              width: 25%;
+            }
+
+            .totals .subtotal-label {
+              text-align: right;
+              width: 30%;
+            }
+
+            .totals .subtotal-value {
+              text-align: right;
+              width: 22%;
+            }
+
+            .net-total {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 2px;
+            }
+
+            .net-total td {
+              border-top: 1px dashed #000;
+              border-bottom: 1px dashed #000;
+              padding: 8px 1px;
+              font-size: 20px;
+              font-weight: 900;
+              white-space: nowrap;
+            }
+
+            .net-total .amount {
+              text-align: right;
+            }
+
+            .footer {
+              text-align: center;
+              margin-top: 7px;
+              padding-bottom: 5px;
+              font-size: 11px;
+              font-weight: 900;
+            }
+          </style>
+        </head>
+
+        <body>
+          <div class="receipt">
+            <div class="shop-header">
+              <div class="shop-name">${escapeHtml(SHOP_NAME)}</div>
+              <div class="shop-address">${escapeHtml(SHOP_ADDRESS)}</div>
+            </div>
+
+            <div class="dashed"></div>
+
+            <table class="meta">
+              <tr>
+                <td>SERIAL NO ${escapeHtml(invoice.serialNo ?? "-")}</td>
+                <td class="right">${escapeHtml(receiptDate)}</td>
+              </tr>
+              <tr>
+                <td>BILL NO ${escapeHtml(invoice.invoiceNo || "-")}</td>
+                <td class="right">${escapeHtml(receiptTime)}</td>
+              </tr>
+            </table>
+
+            <div class="dashed"></div>
+
+            <table class="column-head">
+              <tr>
+                <td class="item-heading">ITEM_NAME</td>
+                <td class="qty-heading">QTY</td>
+                <td class="rate-heading">RATE</td>
+                <td class="total-heading">TOTAL</td>
+              </tr>
+            </table>
+
+            <div class="dashed"></div>
+
+            <table class="items">
+              <tbody>
+                ${productRows}
+              </tbody>
+            </table>
+
+            <div class="dashed"></div>
+
+            <table class="totals">
+              <tr>
+                <td class="items-count">Items: ${items.length}</td>
+                <td class="qty-count">Qty: ${formatQuantity(totalQuantity)}</td>
+                <td class="subtotal-label">SUB TOTAL</td>
+                <td class="subtotal-value">${formatAmount(invoice.subtotal)}</td>
+              </tr>
+            </table>
+
+            <table class="net-total">
+              <tr>
+                <td>NET TOTAL</td>
+                <td class="amount">${formatAmount(invoice.totalAmount)}</td>
+              </tr>
+            </table>
+
+            <div class="footer">THANK YOU ! VISIT AGAIN</div>
+             <div class="footer">Developed and maintained by 
+                             Annaa Silicon Technology Pvt Ltd</div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // 58 mm paper is approximately 164 printer points.
+      await Print.printAsync({
+        html,
+        width: 164,
+      });
+    } catch (error) {
+      console.log("❌ PRINT ERROR:", error);
 
       Alert.alert(
-
         "Print Error",
-
-        "Unable to print this invoice."
-
+        "Unable to print this bill. Check the printer service and try again."
       );
-
-
-
     }
-
-
-
   };
 
 
 
-
-
-  // ===================================================
+    // ===================================================
 
   // SHARE BILL
 

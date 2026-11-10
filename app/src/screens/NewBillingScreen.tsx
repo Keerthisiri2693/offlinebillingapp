@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -9,6 +10,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   RefreshControl,
@@ -72,6 +74,7 @@ type Product = {
 
   hsn?: string;
   hsncode?: string;
+  barcode?: string;
 };
 
 
@@ -160,8 +163,12 @@ export default function BillingScreen() {
   // BASIC INVOICE
   // ===================================================
 
-  const [invoiceId] =
-    useState(createId);
+  const [invoiceId, setInvoiceId] =
+    useState<string>(createId);
+
+  // Prevent duplicate invoice saves when Print is tapped repeatedly.
+  const isSavingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [invoiceNo, setInvoiceNo] =
     useState("");
@@ -821,65 +828,39 @@ export default function BillingScreen() {
   // ===================================================
 
 const handleSaveInvoice = async () => {
-  // =================================================
-  // VALIDATION
-  // =================================================
+  // Prevent duplicate taps / duplicate invoice insertion.
+  if (isSavingRef.current) return;
 
+  // VALIDATION
   if (!items.length) {
-    Alert.alert(
-      "Add Product",
-      "Please select at least one product."
-    );
+    Alert.alert("Add Product", "Please select at least one product.");
     return;
   }
 
   if (!customerName.trim()) {
-    Alert.alert(
-      "Customer Required",
-      "Please enter customer name."
-    );
+    Alert.alert("Customer Required", "Please enter customer name.");
     return;
   }
 
   if (!customerMobile.trim()) {
-    Alert.alert(
-      "Phone Required",
-      "Please enter customer phone number."
-    );
+    Alert.alert("Phone Required", "Please enter customer phone number.");
     return;
   }
 
-  // =================================================
-  // QUANTITY CHECK
-  // =================================================
-
-  if (
-    items.some(
-      item => Number(item.qty || 0) <= 0
-    )
-  ) {
-    Alert.alert(
-      "Invalid Quantity",
-      "Product quantity must be greater than zero."
-    );
+  if (items.some(item => Number(item.qty || 0) <= 0)) {
+    Alert.alert("Invalid Quantity", "Product quantity must be greater than zero.");
     return;
   }
 
-  // =================================================
   // STOCK CHECK
-  // =================================================
-
   for (const item of items) {
     const product = products.find(
-      p =>
-        String(p.id) ===
-        String(item.productId)
+      p => String(p.id) === String(item.productId)
     );
 
     if (
       product &&
-      Number(product.stockquantity || 0) <
-        Number(item.qty || 0)
+      Number(product.stockquantity || 0) < Number(item.qty || 0)
     ) {
       Alert.alert(
         "Insufficient Stock",
@@ -887,437 +868,252 @@ const handleSaveInvoice = async () => {
           product.stockquantity || 0
         )} ${item.uom || ""}.`
       );
-
       return;
     }
   }
 
-  // =================================================
-  // INVOICE ID
-  // =================================================
+  isSavingRef.current = true;
+  setIsSaving(true);
 
-  const currentInvoiceId =
-    String(invoiceId);
-
-  // =================================================
-  // PREPARE INVOICE
-  // newinvoice schema
-  // =================================================
+  // Snapshot current values before asynchronous operations.
+  const currentInvoiceId = String(invoiceId);
+  const currentInvoiceNo = String(invoiceNo || "");
+  const currentItems = [...items];
 
   const invoice = {
     id: currentInvoiceId,
-
-    invoiceNo:
-      String(invoiceNo || ""),
-
-    invoiceDate:
-      invoiceDate ||
-      new Date().toISOString(),
-
+    invoiceNo: currentInvoiceNo,
+    invoiceDate: invoiceDate || new Date().toISOString(),
     customerId: "",
-
-    customerName:
-      customerName.trim(),
-
-    customerMobile:
-      customerMobile.trim(),
-
-    gstNo:
-      gstNo.trim(),
-
-    paymentMode:
-      paymentMode || "Cash",
-
-    taxType:
-      taxEnabled
-        ? "GST"
-        : "No Tax",
-
-    billType:
-      "Retail",
-
-    subtotal:
-      Number(subtotal || 0),
-
-    discount:
-      Number(discount || 0),
-
-    taxableAmount:
-      Number(subtotal || 0) -
-      Number(discount || 0),
-
-    sgst:
-      Number(sgst || 0),
-
-    cgst:
-      Number(cgst || 0),
-
-    igst:
-      Number(igst || 0),
-
-    tax:
-      Number(tax || 0),
-
-    totalAmount:
-      Number(grandTotal || 0),
-
+    customerName: customerName.trim(),
+    customerMobile: customerMobile.trim(),
+    gstNo: gstNo.trim(),
+    paymentMode: paymentMode || "Cash",
+    taxType: taxEnabled ? "GST" : "No Tax",
+    billType: "Retail",
+    subtotal: Number(subtotal || 0),
+    discount: Number(discount || 0),
+    taxableAmount: Number(subtotal || 0) - Number(discount || 0),
+    sgst: Number(sgst || 0),
+    cgst: Number(cgst || 0),
+    igst: Number(igst || 0),
+    tax: Number(tax || 0),
+    totalAmount: Number(grandTotal || 0),
     paidAmount:
-      paymentMode === "Credit"
-        ? 0
-        : Number(grandTotal || 0),
-
+      paymentMode === "Credit" ? 0 : Number(grandTotal || 0),
     balanceAmount:
-      paymentMode === "Credit"
-        ? Number(grandTotal || 0)
-        : 0,
-
-    status:
-      paymentMode === "Credit"
-        ? "UNPAID"
-        : "PAID",
-
+      paymentMode === "Credit" ? Number(grandTotal || 0) : 0,
+    status: paymentMode === "Credit" ? "UNPAID" : "PAID",
     notes: "",
-
-    createdAt:
-      new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   };
 
-  // =================================================
   // PREPARE ITEMS
-  // newinvoice_items schema
-  // =================================================
+  const safeItems = currentItems.map((item, index) => {
+    const quantity = Number(item.qty || 0);
+    const rate = Number(item.rate || 0);
+    const amount = Number(item.amount ?? quantity * rate);
+    const itemDiscount = Number(item.discount || 0);
+    const itemTaxableAmount = Number(
+      item.taxableAmount ?? (amount - itemDiscount)
+    );
+    const itemSgst = Number(item.sgst || 0);
+    const itemCgst = Number(item.cgst || 0);
+    const itemIgst = Number(item.igst || 0);
+    const itemTaxAmount = itemSgst + itemCgst + itemIgst;
+    const itemTotalAmount = Number(
+      item.totalAmount ?? (itemTaxableAmount + itemTaxAmount)
+    );
 
-  const safeItems = items.map(
-    (item, index) => {
-
-      const quantity =
-        Number(item.qty || 0);
-
-      const rate =
-        Number(item.rate || 0);
-
-      const amount =
-        Number(
-          item.amount ??
-          quantity * rate
-        );
-
-      const itemDiscount =
-        Number(
-          item.discount || 0
-        );
-
-      const itemTaxableAmount =
-        Number(
-          item.taxableAmount ??
-          (
-            amount -
-            itemDiscount
-          )
-        );
-
-      const itemSgst =
-        Number(item.sgst || 0);
-
-      const itemCgst =
-        Number(item.cgst || 0);
-
-      const itemIgst =
-        Number(item.igst || 0);
-
-      const itemTaxAmount =
-        itemSgst +
-        itemCgst +
-        itemIgst;
-
-      const itemTotalAmount =
-        Number(
-          item.totalAmount ??
-          (
-            itemTaxableAmount +
-            itemTaxAmount
-          )
-        );
-
-      return {
-        id:
-          `${currentInvoiceId}_${item.productId || index}`,
-
-        invoiceId:
-          currentInvoiceId,
-
-        productId:
-          item.productId
-            ? String(item.productId)
-            : "",
-
-        productcode:
-          item.productcode || "",
-
-        productName:
-          item.product || "",
-
-        productimage:
-          item.productimage || "",
-
-        category:
-          item.category || "",
-
-        subcategory:
-          item.subcategory || "",
-
-        quantity,
-
-        rate,
-
-        amount,
-
-        unit:
-          item.unit || "",
-
-        uom:
-          item.uom || "",
-
-        discount:
-          itemDiscount,
-
-        taxableAmount:
-          itemTaxableAmount,
-
-        sgst:
-          itemSgst,
-
-        cgst:
-          itemCgst,
-
-        igst:
-          itemIgst,
-
-        taxAmount:
-          itemTaxAmount,
-
-        totalAmount:
-          itemTotalAmount,
-      };
-    }
-  );
-
-  // =================================================
-  // LOG
-  // =================================================
-
-  console.log(
-    "🧾 INVOICE OBJECT:",
-    invoice
-  );
-
-  console.log(
-    "📦 ITEMS ARRAY:",
-    safeItems
-  );
-
-  // =================================================
-  // DIRECT SQLITE INSERT
-  // =================================================
+    return {
+      id: `${currentInvoiceId}_${item.productId || index}`,
+      invoiceId: currentInvoiceId,
+      productId: item.productId ? String(item.productId) : "",
+      productcode: item.productcode || "",
+      productName: item.product || "",
+      productimage: item.productimage || "",
+      category: item.category || "",
+      subcategory: item.subcategory || "",
+      quantity,
+      rate,
+      amount,
+      unit: item.unit || "",
+      uom: item.uom || "",
+      discount: itemDiscount,
+      taxableAmount: itemTaxableAmount,
+      sgst: itemSgst,
+      cgst: itemCgst,
+      igst: itemIgst,
+      taxAmount: itemTaxAmount,
+      totalAmount: itemTotalAmount,
+    };
+  });
 
   try {
-
-    // -----------------------------------------------
-    // GET DATABASE
-    // -----------------------------------------------
-
-    const database =
-      await getDB();
+    // 1. SAVE INVOICE HEADER AND ITEMS TO LOCAL SQLITE
+    const database = await getDB();
 
     if (!database) {
-      Alert.alert(
-        "Database Error",
-        "Unable to open SQLite database."
-      );
-
-      return;
+      throw new Error("Unable to open SQLite database.");
     }
 
-    console.log(
-      "🗄️ DATABASE READY:",
-      database
-    );
-
-    // =================================================
-    // INSERT INVOICE HEADER
-    // =================================================
-
-    const invoiceInserted =
-      await insertNewInvoice(
-        database,
-        invoice
-      );
-
-      // Store the EXACT ID that was inserted
-setSavedInvoiceId(
-  String(invoice.id)
-);
-
-console.log(
-  "💾 SAVED INVOICE ID:",
-  String(invoice.id)
-);
+    const invoiceInserted = await insertNewInvoice(database, invoice);
 
     if (!invoiceInserted) {
-
-      Alert.alert(
-        "Save Failed",
-        "Unable to insert invoice."
-      );
-
-      return;
+      throw new Error("Unable to insert invoice header.");
     }
 
-    console.log(
-      "✅ NEW INVOICE INSERTED"
-    );
+    console.log("✅ INVOICE HEADER INSERTED:", currentInvoiceId);
 
-    // =================================================
-    // INSERT INVOICE ITEMS
-    // =================================================
-
-    for (
-      const item of safeItems
-    ) {
-
-      const itemInserted =
-        await insertNewInvoiceItem(
-          database,
-          item
-        );
+    for (const item of safeItems) {
+      const itemInserted = await insertNewInvoiceItem(database, item);
 
       if (!itemInserted) {
-
-        Alert.alert(
-          "Save Failed",
-          `Unable to insert item: ${
-            item.productName || "Unknown"
-          }`
+        throw new Error(
+          `Unable to insert invoice item: ${item.productName || "Unknown"}`
         );
-
-        return;
       }
 
-      console.log(
-        "✅ NEW INVOICE ITEM INSERTED:",
-        item.productName
-      );
+      console.log("✅ INVOICE ITEM INSERTED:", item.productName);
     }
 
-    // =================================================
-    // UPDATE PRODUCT STOCK
-    // =================================================
-
-    for (
-      const item of safeItems
-    ) {
-
-      if (!item.productId) {
-        continue;
-      }
+    // 2. UPDATE PRODUCT STOCK AFTER ALL INVOICE ITEMS ARE INSERTED
+    for (const item of safeItems) {
+      if (!item.productId) continue;
 
       await database.runAsync(
         `
         UPDATE products
-        SET stockquantity =
-          MAX(
-            0,
-            COALESCE(stockquantity, 0) - ?
-          )
+        SET stockquantity = MAX(
+          0,
+          COALESCE(stockquantity, 0) - ?
+        )
         WHERE id = ?
         `,
-        [
-          Number(
-            item.quantity || 0
-          ),
-
-          String(
-            item.productId
-          ),
-        ]
+        [Number(item.quantity || 0), String(item.productId)]
       );
 
-      console.log(
-        "📦 STOCK UPDATED:",
-        item.productName,
-        "Qty:",
-        item.quantity
-      );
+      console.log("📦 STOCK UPDATED:", item.productName, item.quantity);
     }
 
-    // =================================================
-    // COMPLETE
-    // =================================================
+    setSavedInvoiceId(currentInvoiceId);
+    console.log("🎉 INVOICE SAVED LOCALLY:", currentInvoiceId);
 
-    console.log(
-      "🎉 INVOICE SAVED COMPLETELY"
-    );
+    // 3. SEND THE SAVED RECEIPT TO THE UROVO NATIVE PRINTER MODULE
+    const printReceipt = async (): Promise<boolean> => {
+      try {
+        const printer = NativeModules.UrovoPrinter;
 
-   Alert.alert(
-  "Invoice Saved",
-  `Invoice #${invoiceNo} saved successfully.`,
-  [
-    {
-      text: "OK",
+        if (!printer || typeof printer.printReceipt !== "function") {
+          throw new Error(
+            "UROVO built-in printer module is not registered. Check MainApplication.kt and UrovoPrinterPackage.java."
+          );
+        }
 
-      onPress: () => {
-        // =========================================
-        // CLEAR FORM
-        // =========================================
+        const receiptData = {
+          paperWidth: 58, // 58mm paper = 2-inch receipt width
+          shopName: "AST OFFLINE BILLING",
+          address: "",
+          invoiceNo: invoice.invoiceNo,
+          invoiceDate: invoice.invoiceDate,
+          customerName: invoice.customerName,
+          customerMobile: invoice.customerMobile,
+          gstNo: invoice.gstNo,
+          paymentMode: invoice.paymentMode,
+          items: safeItems.map(item => ({
+            name: item.productName,
+            quantity: item.quantity,
+            rate: item.rate,
+            total: item.totalAmount,
+            uom: item.uom,
+          })),
+          subtotal: invoice.subtotal,
+          discount: invoice.discount,
+          taxableAmount: invoice.taxableAmount,
+          sgst: invoice.sgst,
+          cgst: invoice.cgst,
+          igst: invoice.igst,
+          tax: invoice.tax,
+          grandTotal: invoice.totalAmount,
+          footer: "THANK YOU! VISIT AGAIN",
+        };
 
-        setItems([]);
-        setCustomerName("");
-        setCustomerMobile("");
-        setGstNo("");
-        setPaymentMode("Cash");
+        const result = await printer.printReceipt(JSON.stringify(receiptData));
+        console.log("🖨️ UROVO PRINT RESULT:", result);
+        return true;
+      } catch (printError) {
+        console.log("❌ UROVO PRINT ERROR:", printError);
+        return false;
+      }
+    };
 
-        // =========================================
-        // GENERATE NEXT INVOICE NUMBER
-        // =========================================
+    const navigateToSavedInvoice = () => {
+      setItems([]);
+      setCustomerName("");
+      setCustomerMobile("");
+      setGstNo("");
+      setPaymentMode("Cash");
 
-        generateInvoiceNo();
+      // Create a fresh ID for the next invoice.
+      setInvoiceId(createId());
+      setSavedInvoiceId("");
+      generateInvoiceNo();
 
-        // =========================================
-        // GO TO VIEW BILLING
-        // PASS INVOICE ID
-        // =========================================
+      router.push({
+        pathname: "/src/screens/ViewNewBilling",
+        params: { invoiceId: currentInvoiceId },
+      });
+    };
 
-       router.push({
-  pathname: "/src/screens/ViewNewBilling",
-  params: {
-    invoiceId: String(currentInvoiceId),
-  },
-});
-      },
-    },
-  ]
-);
+    const printed = await printReceipt();
 
+    if (printed) {
+      Alert.alert(
+        "Invoice Saved & Printed",
+        `Invoice #${currentInvoiceNo} was saved locally and sent to the printer.`,
+        [{ text: "OK", onPress: navigateToSavedInvoice }]
+      );
+    } else {
+      Alert.alert(
+        "Invoice Saved - Print Not Available",
+        `Invoice #${currentInvoiceNo} and its items are saved in SQLite. Printing could not be completed because the UROVO printer module is not configured or the printer returned an error.`,
+        [
+          { text: "View Bill", onPress: navigateToSavedInvoice },
+          {
+            text: "Retry Print",
+            onPress: async () => {
+              const retryPrinted = await printReceipt();
 
-
-  } catch (error) {
-
-    console.log(
-      "❌ INSERT NEW INVOICE ERROR:",
-      error
-    );
+              if (retryPrinted) {
+                Alert.alert(
+                  "Print Successful",
+                  `Invoice #${currentInvoiceNo} printed successfully.`,
+                  [{ text: "OK", onPress: navigateToSavedInvoice }]
+                );
+              } else {
+                Alert.alert(
+                  "Print Failed",
+                  "The invoice remains saved locally. Check the UROVO printer connection and SDK configuration, then try again."
+                );
+              }
+            },
+          },
+        ]
+      );
+    }
+  } catch (error: any) {
+    console.log("❌ SAVE INVOICE ERROR:", error);
 
     Alert.alert(
-      "SQLite Error",
-      String(
-        error?.message ||
-        error
-      )
+      "Invoice Save Failed",
+      String(error?.message || error || "Unable to save invoice.")
     );
+  } finally {
+    isSavingRef.current = false;
+    setIsSaving(false);
   }
 };
 
-  // ===================================================
   // PRODUCT MODAL
   // ===================================================
 
@@ -3061,8 +2857,10 @@ console.log(
     style={[
       styles.saveButton,
       styles.saveButtonHalf,
+      { opacity: isSaving ? 0.6 : 1 },
     ]}
     onPress={handleSaveInvoice}
+    disabled={isSaving}
   >
     <MaterialCommunityIcons
       name="content-save-check-outline"
@@ -3071,7 +2869,7 @@ console.log(
     />
 
     <Text style={styles.saveButtonText}>
-      SAVE
+      {isSaving ? "SAVING..." : "SAVE & PRINT"}
     </Text>
   </TouchableOpacity>
 
